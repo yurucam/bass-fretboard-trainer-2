@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { audio } from './audio'
+import { FiSettings } from 'react-icons/fi'
+import { IoClose } from 'react-icons/io5'
 
 type StringCount = 4 | 5 | 6
 
@@ -82,6 +84,7 @@ function App() {
   // guard against rapid multi-taps causing double-advance
   const lastHitTsRef = useRef<number>(0)
   const pendingNextRef = useRef<boolean>(false)
+  const [controlsOpen, setControlsOpen] = useState<boolean>(false)
 
   // Unique set of targetable MIDI notes (optionally include open)
   const possibleMidis = useMemo(() => {
@@ -211,7 +214,16 @@ function App() {
         {banner && (
           <div className="problem-banner enter">{banner}</div>
         )}
-        <div className="floating-controls">
+        <div className={`floating-controls ${controlsOpen ? 'open' : ''}`}>
+          <button
+            className="controls-toggle"
+            aria-expanded={controlsOpen}
+            aria-label="설정"
+            onClick={() => setControlsOpen((v) => !v)}
+          >
+            {controlsOpen ? <IoClose size={28} /> : <FiSettings size={26} />}
+          </button>
+          <div className="controls-body">
           <label className="control small">
             <span>현 수</span>
             <select
@@ -265,6 +277,7 @@ function App() {
               onChange={(e) => setFlipBoth(e.target.checked)}
             />
           </label>
+          </div>
         </div>
       </div>
     </div>
@@ -365,6 +378,14 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
     pt.x = evt.clientX
     pt.y = evt.clientY
     let sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    // Safari portrait + rotated viewport fallback mapping
+    if (window.matchMedia && window.matchMedia('(orientation: portrait)').matches) {
+      const rect = svg.getBoundingClientRect()
+      const u = (evt.clientX - rect.left) / rect.width
+      const v = (evt.clientY - rect.top) / rect.height
+      // viewport is rotated +90deg; invert rotation: x = v, y = 1 - u
+      sp = new DOMPoint(width * v, boardHeight * (1 - u))
+    }
     if (flipBoth) sp = new DOMPoint(width - sp.x, boardHeight - sp.y)
     const hit = pickHit(sp)
     if (!hit) return
@@ -378,6 +399,12 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
     pt.x = evt.clientX
     pt.y = evt.clientY
     let sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    if (window.matchMedia && window.matchMedia('(orientation: portrait)').matches) {
+      const rect = svg.getBoundingClientRect()
+      const u = (evt.clientX - rect.left) / rect.width
+      const v = (evt.clientY - rect.top) / rect.height
+      sp = new DOMPoint(width * v, boardHeight * (1 - u))
+    }
     if (flipBoth) sp = new DOMPoint(width - sp.x, boardHeight - sp.y)
     const hit = pickHit(sp)
     setHover(hit)

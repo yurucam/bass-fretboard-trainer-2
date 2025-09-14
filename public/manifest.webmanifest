@@ -1,0 +1,10 @@
+{
+  "name": "베이스 지판 퀴즈",
+  "short_name": "지판퀴즈",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "orientation": "landscape",
+  "icons": []
+}

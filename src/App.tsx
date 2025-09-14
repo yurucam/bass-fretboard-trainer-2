@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import { audio } from './audio'
 
 type StringCount = 4 | 5 | 6
 
@@ -32,6 +33,24 @@ function midiToNameOctave(midi: number): string {
   return `${name}${octave}`
 }
 
+// Persist simple values in localStorage
+function usePersistedState<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key)
+      return raw == null ? initial : (JSON.parse(raw) as T)
+    } catch {
+      return initial
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value))
+    } catch {}
+  }, [key, value])
+  return [value, setValue] as const
+}
+
 function useShake(ms = 350) {
   const [shaking, setShaking] = useState(false)
   const timer = useRef<number | null>(null)
@@ -45,10 +64,12 @@ function useShake(ms = 350) {
 }
 
 function App() {
-  const [stringCount, setStringCount] = useState<StringCount>(4)
-  const [frets, setFrets] = useState<number>(21)
-  const [theme, setTheme] = useState<BoardTheme>('ebony')
-  const [inlay, setInlay] = useState<InlayStyle>('dot')
+  const [stringCount, setStringCount] = usePersistedState<StringCount>('bf:stringCount', 4)
+  const [frets, setFrets] = usePersistedState<number>('bf:frets', 21)
+  const [theme, setTheme] = usePersistedState<BoardTheme>('bf:theme', 'ebony')
+  const [inlay, setInlay] = usePersistedState<InlayStyle>('bf:inlay', 'dot')
+  const [flipBoth, setFlipBoth] = usePersistedState<boolean>('bf:flipBoth', false)
+  const [soundOn, setSoundOn] = usePersistedState<boolean>('bf:soundOn', true)
 
   // Always running quiz flow
   const [currentMidi, setCurrentMidi] = useState<number | null>(null)
@@ -130,6 +151,13 @@ function App() {
     (hit: Target) => {
       if (currentMidi == null) return
       const midi = OPEN_MIDIS[stringCount][hit.stringIndex] + hit.fret
+      // Play the pressed note (stop previous first) if enabled
+      if (soundOn) {
+        try {
+          audio.ensure()
+          audio.playMidi(midi)
+        } catch {}
+      }
       const ok = midi === currentMidi
       if (ok) {
         nextTarget()
@@ -140,66 +168,92 @@ function App() {
         setTimeout(() => setShowDamage(false), 350)
       }
     },
-    [currentMidi, nextTarget, trigger, stringCount],
+    [currentMidi, nextTarget, trigger, stringCount, soundOn],
   )
+
+  // Immediately stop any ringing note when sound is toggled off
+  useEffect(() => {
+    if (!soundOn) {
+      try { audio.stopCurrent(40) } catch {}
+    }
+  }, [soundOn])
 
 
   return (
     <div className={`app-root ${showDamage ? 'damage' : ''}`}>
-      <div className={`stage ${shaking ? 'shake' : ''}`}>
+      <div className="viewport">
+        <div className={`stage ${shaking ? 'shake' : ''}`}>
         <Fretboard
           stringCount={stringCount}
           frets={frets}
           theme={theme}
           inlayStyle={inlay}
+          flipBoth={flipBoth}
           onHit={onHit}
         />
-        {/* red overlay handled by .app-root.damage via CSS */}
-      </div>
-      {prevBanner && (
-        <div className="problem-banner exit">{prevBanner}</div>
-      )}
-      {banner && (
-        <div className="problem-banner enter">{banner}</div>
-      )}
-      <div className="floating-controls">
-        <label className="control small">
-          <span>현 수</span>
-          <select
-            value={stringCount}
-            onChange={(e) => setStringCount(Number(e.target.value) as StringCount)}
-          >
-            <option value={4}>4</option>
-            <option value={5}>5</option>
-            <option value={6}>6</option>
-          </select>
-        </label>
-        <label className="control small">
-          <span>프렛</span>
-          <select value={frets} onChange={(e) => setFrets(Number(e.target.value))}>
-            <option value={12}>12</option>
-            <option value={21}>21</option>
-            <option value={22}>22</option>
-            <option value={23}>23</option>
-            <option value={24}>24</option>
-          </select>
-        </label>
-        <label className="control small">
-          <span>지판</span>
-          <select value={theme} onChange={(e) => setTheme(e.target.value as BoardTheme)}>
-            <option value="ebony">에보니</option>
-            <option value="maple">메이플</option>
-            <option value="rosewood">로즈우드</option>
-            <option value="pauferro">포페로</option>
-          </select>
-        </label>
-        <label className="control small">
-          <span>인레이</span>
-          <select value={inlay} onChange={(e) => setInlay(e.target.value as InlayStyle)}>
-            <option value="dot">닷</option>
-            <option value="block">블록</option>
-          </select>
-        </label>
+          {/* red overlay handled by .app-root.damage via CSS */}
+        </div>
+        {prevBanner && (
+          <div className="problem-banner exit">{prevBanner}</div>
+        )}
+        {banner && (
+          <div className="problem-banner enter">{banner}</div>
+        )}
+        <div className="floating-controls">
+          <label className="control small">
+            <span>현 수</span>
+            <select
+              value={stringCount}
+              onChange={(e) => setStringCount(Number(e.target.value) as StringCount)}
+            >
+              <option value={4}>4</option>
+              <option value={5}>5</option>
+              <option value={6}>6</option>
+            </select>
+          </label>
+          <label className="control small">
+            <span>음 재생</span>
+            <input
+              type="checkbox"
+              checked={soundOn}
+              onChange={(e) => setSoundOn(e.target.checked)}
+            />
+          </label>
+          <label className="control small">
+            <span>프렛</span>
+            <select value={frets} onChange={(e) => setFrets(Number(e.target.value))}>
+              <option value={12}>12</option>
+              <option value={21}>21</option>
+              <option value={22}>22</option>
+              <option value={23}>23</option>
+              <option value={24}>24</option>
+            </select>
+          </label>
+          <label className="control small">
+            <span>지판</span>
+            <select value={theme} onChange={(e) => setTheme(e.target.value as BoardTheme)}>
+              <option value="ebony">에보니</option>
+              <option value="maple">메이플</option>
+              <option value="rosewood">로즈우드</option>
+              <option value="pauferro">포페로</option>
+            </select>
+          </label>
+          <label className="control small">
+            <span>인레이</span>
+            <select value={inlay} onChange={(e) => setInlay(e.target.value as InlayStyle)}>
+              <option value="dot">닷</option>
+              <option value="block">블록</option>
+            </select>
+          </label>
+          <label className="control small">
+            <span>상하좌우 반전</span>
+            <input
+              type="checkbox"
+              checked={flipBoth}
+              onChange={(e) => setFlipBoth(e.target.checked)}
+            />
+          </label>
+        </div>
       </div>
     </div>
   )
@@ -213,9 +267,10 @@ type FretboardProps = {
   onHit: (hit: Target) => void
   theme: BoardTheme
   inlayStyle: InlayStyle
+  flipBoth?: boolean
 }
 
-function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardProps) {
+function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: FretboardProps) {
   // SVG geometry
   const width = 1600
   const heightPerString = 44
@@ -223,7 +278,7 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardPr
   const nutWidth = 10
   const boardHeight = stringCount * heightPerString + paddingY * 2
   const scaleLength = 1000 // px, relative scale for fret spacing
-  const openPad = 14 // extra clickable pad right of nut for open strings
+  const openPad = 18 // extra clickable pad right of nut for open strings (larger for touch)
   const FRET_WIDTH = 5
 
   // Fret positions from nut (x)
@@ -269,8 +324,10 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardPr
       const dy = Math.abs(sp.y - y)
       if (dy < minDy) { minDy = dy; stringIndex = i }
     })
-    // open string zone
-    if (sp.x <= nutWidth + openPad) {
+    // open string zone with grace: extend slightly into first-fret area
+    const firstFretX = fretXs[1] ?? (nutWidth + 60)
+    const openGrace = Math.min(24, (firstFretX - nutWidth) * 0.25)
+    if (sp.x <= nutWidth + openPad + openGrace) {
       return { stringIndex, fret: 0 }
     }
     // fret region n between x_{n-1} and x_n
@@ -290,44 +347,46 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardPr
   const [hover, setHover] = useState<Target | null>(null)
 
   // Click handling uses hit test
-  const handleClick = (evt: React.MouseEvent<SVGSVGElement>) => {
+  const handlePointerDown = (evt: React.PointerEvent<SVGSVGElement>) => {
     const svg = evt.currentTarget
     const pt = svg.createSVGPoint()
     pt.x = evt.clientX
     pt.y = evt.clientY
-    const sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    let sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    if (flipBoth) sp = new DOMPoint(width - sp.x, boardHeight - sp.y)
     const hit = pickHit(sp)
     if (!hit) return
+    setHover(hit)
     onHit(hit)
   }
 
-  const handleMove = (evt: React.MouseEvent<SVGSVGElement>) => {
+  const handlePointerMove = (evt: React.PointerEvent<SVGSVGElement>) => {
     const svg = evt.currentTarget
     const pt = svg.createSVGPoint()
     pt.x = evt.clientX
     pt.y = evt.clientY
-    const sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    let sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    if (flipBoth) sp = new DOMPoint(width - sp.x, boardHeight - sp.y)
     const hit = pickHit(sp)
     setHover(hit)
   }
 
-  const handleLeave = () => setHover(null)
+  const handlePointerLeave = () => setHover(null)
 
   // removed highlight position (no hint rendering)
 
   return (
-    <div className="fretboard-wrap">
-      <svg
-        className="fretboard"
-        width={width}
-        height={boardHeight}
-        viewBox={`0 0 ${width} ${boardHeight}`}
-        onClick={handleClick}
-        onMouseMove={handleMove}
-        onMouseLeave={handleLeave}
-        role="img"
-        aria-label="베이스 지판"
-      >
+    <svg
+      className="fretboard"
+      width={width}
+      height={boardHeight}
+      viewBox={`0 0 ${width} ${boardHeight}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+      role="img"
+      aria-label="베이스 지판"
+    >
         {/* wood background */}
         <defs>
           {/* dynamic wood palette by theme */}
@@ -381,31 +440,32 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardPr
           </radialGradient>
         </defs>
 
-        {/* board */}
-        <rect x={0} y={0} width={width} height={boardHeight} fill="url(#wood)" rx={8} />
+        <g transform={flipBoth ? `translate(${width},${boardHeight}) scale(-1,-1)` : undefined}>
+          {/* board */}
+          <rect x={0} y={0} width={width} height={boardHeight} fill="url(#wood)" rx={8} />
 
-        {/* nut */}
-        <rect x={0} y={0} width={nutWidth} height={boardHeight} fill="#e5e2d8" />
-        {/* open helper zone visual (subtle) */}
-        <rect x={nutWidth} y={0} width={openPad} height={boardHeight} fill="#ffffff" opacity={0.04} />
+          {/* nut */}
+          <rect x={0} y={0} width={nutWidth} height={boardHeight} fill="#e5e2d8" />
+          {/* open helper zone visual (subtle) */}
+          <rect x={nutWidth} y={0} width={openPad} height={boardHeight} fill="#ffffff" opacity={0.04} />
 
-        {/* frets */}
-        {fretXs.slice(1).map((x, i) => (
-          <rect
-            key={`fret-${i + 1}`}
-            x={x - FRET_WIDTH / 2}
-            y={0}
-            width={FRET_WIDTH}
-            height={boardHeight}
-            fill="url(#metal)"
-            stroke="#6a6a6a"
-            strokeWidth={0.6}
-            opacity={0.98}
-          />
-        ))}
+          {/* frets */}
+          {fretXs.slice(1).map((x, i) => (
+            <rect
+              key={`fret-${i + 1}`}
+              x={x - FRET_WIDTH / 2}
+              y={0}
+              width={FRET_WIDTH}
+              height={boardHeight}
+              fill="url(#metal)"
+              stroke="#6a6a6a"
+              strokeWidth={0.6}
+              opacity={0.98}
+            />
+          ))}
 
-        {/* inlays */}
-        {inlayFrets.map((n) => {
+          {/* inlays */}
+          {inlayFrets.map((n) => {
           const xL = fretXs[n - 1]
           const xR = fretXs[n]
           const xMid = (xL + xR) / 2
@@ -447,10 +507,10 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardPr
               <rect x={x} y={y} width={blockW} height={blockH} rx={ry} ry={ry} fill="url(#pearl)" opacity={0.95} stroke="rgba(255,255,255,0.35)" strokeWidth={0.6} />
             </g>
           )
-        })}
+          })}
 
         {/* strings */}
-        {stringYs.map((y, i) => {
+          {stringYs.map((y, i) => {
           const gauge = 4 + (stringYs.length - 1 - i) * 1.2 // thicker for lower strings (bottom)
           const highlight = '#e7f0f6'
           return (
@@ -475,31 +535,33 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardPr
               />
             </g>
           )
-        })}
+          })}
 
         {/* hover indicator only; no target hint */}
 
         {/* hover highlight: full cell area for the hovered string × fret */}
-        {hover && (
+          {hover && (
           (() => {
             const yCenter = stringYs[hover.stringIndex]
             const h = heightPerString * 0.9
             const y = yCenter - h / 2
-            if (hover.fret === 0) {
+          if (hover.fret === 0) {
               // open: entire open click zone
               const x0 = 0
-              const x1 = nutWidth + openPad
+              const firstFretX = fretXs[1] ?? (nutWidth + 60)
+              const openGrace = Math.min(24, (firstFretX - nutWidth) * 0.25)
+              const x1 = nutWidth + openPad + openGrace
               const w = x1 - x0
               return <rect x={x0} y={y} width={w} height={h} rx={6} ry={6} fill="rgba(0,0,0,0.20)" />
             } else {
-              const x0 = fretXs[hover.fret - 1]
+            const x0 = fretXs[hover.fret - 1]
               const x1 = fretXs[hover.fret]
               const w = Math.max(2, x1 - x0)
               return <rect x={x0} y={y} width={w} height={h} rx={6} ry={6} fill="rgba(0,0,0,0.20)" />
             }
           })()
-        )}
-      </svg>
-    </div>
+          )}
+        </g>
+    </svg>
   )
 }

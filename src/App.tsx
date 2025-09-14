@@ -13,7 +13,7 @@ type Target = {
 }
 
 type BoardTheme = 'ebony' | 'maple' | 'rosewood' | 'pauferro'
-type InlayStyle = 'dot' | 'block'
+type InlayStyle = 'dot' | 'block' | 'none'
 type ProblemView = 'text' | 'staff'
 
 // Note: textual tuning kept implicit via OPEN_MIDIS and midiToNameOctave
@@ -75,6 +75,8 @@ function App() {
   const [flipBoth, setFlipBoth] = usePersistedState<boolean>('bf:flipBoth', false)
   const [soundOn, setSoundOn] = usePersistedState<boolean>('bf:soundOn', true)
   const [problemView, setProblemView] = usePersistedState<ProblemView>('bf:problemView', 'text')
+  const [sideDots, setSideDots] = usePersistedState<boolean>('bf:sideDots', false)
+  const [binding, setBinding] = usePersistedState<boolean>('bf:binding', false)
 
   // Always running quiz flow
   const [currentMidi, setCurrentMidi] = useState<number | null>(null)
@@ -206,6 +208,8 @@ function App() {
           frets={frets}
           theme={theme}
           inlayStyle={inlay}
+          sideDots={sideDots}
+          binding={binding}
           flipBoth={flipBoth}
           onHit={onHit}
         />
@@ -262,6 +266,7 @@ function App() {
             <select value={inlay} onChange={(e) => setInlay(e.target.value as InlayStyle)}>
               <option value="dot">닷</option>
               <option value="block">블록</option>
+              <option value="none">없음</option>
             </select>
           </label>
           <label className="control small">
@@ -281,6 +286,22 @@ function App() {
               <option value="text">텍스트</option>
               <option value="staff">악보</option>
             </select>
+          </label>
+          <label className="control small">
+            <span>사이드닷</span>
+            <input
+              type="checkbox"
+              checked={sideDots}
+              onChange={(e) => setSideDots(e.target.checked)}
+            />
+          </label>
+          <label className="control small">
+            <span>바인딩</span>
+            <input
+              type="checkbox"
+              checked={binding}
+              onChange={(e) => setBinding(e.target.checked)}
+            />
           </label>
           <label className="control small">
             <span>상하좌우 반전</span>
@@ -305,19 +326,56 @@ type FretboardProps = {
   onHit: (hit: Target) => void
   theme: BoardTheme
   inlayStyle: InlayStyle
+  sideDots?: boolean
+  binding?: boolean
   flipBoth?: boolean
 }
 
-function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: FretboardProps) {
+function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, sideDots, binding, flipBoth }: FretboardProps) {
   // SVG geometry
   const width = 1600
   const heightPerString = 44
   const paddingY = 24
   const nutWidth = 10
   const boardHeight = stringCount * heightPerString + paddingY * 2
+  const bindingThickness = binding ? 10 : 0
+  const sideRailHeight = sideDots && !binding ? 10 : 0
+  const totalHeight = bindingThickness * 2 + boardHeight + sideRailHeight
+  const boardTopY = bindingThickness
+  const boardBottomY = boardTopY + boardHeight
   const scaleLength = 1000 // px, relative scale for fret spacing
   const openPad = 18 // extra clickable pad right of nut for open strings (larger for touch)
   const FRET_WIDTH = 5
+  // Theme-tinted side rail and nut side color
+  const railFill = useMemo(() => {
+    switch (theme) {
+      case 'ebony':
+        return '#2a2521'
+      case 'maple':
+        return '#c18a40'
+      case 'rosewood':
+        return '#472a21'
+      case 'pauferro':
+        return '#7a5635'
+      default:
+        return '#2a2521'
+    }
+  }, [theme])
+  const railStroke = useMemo(() => {
+    switch (theme) {
+      case 'ebony':
+        return '#211d1a'
+      case 'maple':
+        return '#a87635'
+      case 'rosewood':
+        return '#3d251d'
+      case 'pauferro':
+        return '#6a4a2f'
+      default:
+        return '#211d1a'
+    }
+  }, [theme])
+  const nutSideFill = '#d8d1c2'
 
   // Fret positions from nut (x)
   const fretXs = useMemo(() => {
@@ -339,11 +397,11 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
     const usable = boardHeight - paddingY * 2
     for (let i = 0; i < stringCount; i += 1) {
       // index 0 -> bottom line, index last -> top line
-      const y = paddingY + (usable * (stringCount - 1 - i)) / (stringCount - 1 || 1)
+      const y = boardTopY + paddingY + (usable * (stringCount - 1 - i)) / (stringCount - 1 || 1)
       ys.push(y)
     }
     return ys
-  }, [boardHeight, paddingY, stringCount])
+  }, [boardTopY, boardHeight, paddingY, stringCount])
 
   // Inlay positions up to current fret count
   const inlayFrets = useMemo(() => {
@@ -428,17 +486,17 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
   // removed highlight position (no hint rendering)
 
   return (
-    <svg
-      className="fretboard"
-      width={width}
-      height={boardHeight}
-      viewBox={`0 0 ${width} ${boardHeight}`}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerLeave={handlePointerLeave}
-      role="img"
-      aria-label="베이스 지판"
-    >
+      <svg
+        className="fretboard"
+        width={width}
+        height={totalHeight}
+        viewBox={`0 0 ${width} ${totalHeight}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        role="img"
+        aria-label="베이스 지판"
+      >
         {/* wood background */}
         <defs>
           {/* dynamic wood palette by theme */}
@@ -493,20 +551,26 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
         </defs>
 
         <g transform={flipBoth ? `translate(${width},${boardHeight}) scale(-1,-1)` : undefined}>
-        {/* board (no rounding) */}
-        <rect x={0} y={0} width={width} height={boardHeight} fill="url(#wood)" />
+          {/* board (no rounding) */}
+        <rect x={0} y={boardTopY} width={width} height={boardHeight} fill="url(#wood)" />
+        {binding && (
+          <>
+            <rect x={0} y={0} width={width} height={bindingThickness} fill="#e8e1cc" opacity={0.95} />
+            <rect x={0} y={boardBottomY} width={width} height={bindingThickness} fill="#e8e1cc" opacity={0.95} />
+          </>
+        )}
 
           {/* nut */}
-          <rect x={0} y={0} width={nutWidth} height={boardHeight} fill="#e5e2d8" />
+          <rect x={0} y={boardTopY} width={nutWidth} height={boardHeight} fill="#e5e2d8" />
           {/* open helper zone visual (subtle) */}
-          <rect x={nutWidth} y={0} width={openPad} height={boardHeight} fill="#ffffff" opacity={0.04} />
+          <rect x={nutWidth} y={boardTopY} width={openPad} height={boardHeight} fill="#ffffff" opacity={0.04} />
 
           {/* frets */}
           {fretXs.slice(1).map((x, i) => (
             <rect
               key={`fret-${i + 1}`}
               x={x - FRET_WIDTH / 2}
-              y={0}
+              y={boardTopY}
               width={FRET_WIDTH}
               height={boardHeight}
               fill="url(#metal)"
@@ -517,7 +581,7 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
           ))}
 
           {/* inlays */}
-          {inlayFrets.map((n) => {
+          {inlayStyle !== 'none' && inlayFrets.map((n) => {
           const xL = fretXs[n - 1]
           const xR = fretXs[n]
           const xMid = (xL + xR) / 2
@@ -529,8 +593,8 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
           if (inlayStyle === 'dot') {
             const dotR = 8
             const edgeMargin = Math.max(dotR + 3, paddingY * 0.6)
-            const yTopEdge = paddingY + edgeMargin
-            const yBottomEdge = boardHeight - paddingY - edgeMargin
+            const yTopEdge = boardTopY + paddingY + edgeMargin
+            const yBottomEdge = boardBottomY - paddingY - edgeMargin
             return (
               <g key={`inlay-${n}`}>
                 {isDouble ? (
@@ -560,6 +624,61 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
             </g>
           )
           })}
+
+          {/* side dots: bottom edge inside binding, otherwise on a side rail below the board */}
+          {sideDots && (
+            <>
+              {binding ? (
+                inlayFrets.map((n) => {
+                  const xL = fretXs[n - 1]
+                  const xR = fretXs[n]
+                  const xMid = (xL + xR) / 2
+                  const yDot = boardBottomY + (bindingThickness / 2)
+                  const isDouble = n === 12 || (n === 24 && frets >= 24)
+                  const r = 3
+                  return (
+                    <g key={`sidedot-bind-${n}`}>
+                      {isDouble ? (
+                        <>
+                          <circle cx={xMid - 6} cy={yDot} r={r} fill="#9c9582" opacity={0.95} />
+                          <circle cx={xMid + 6} cy={yDot} r={r} fill="#9c9582" opacity={0.95} />
+                        </>
+                      ) : (
+                        <circle cx={xMid} cy={yDot} r={r} fill="#9c9582" opacity={0.95} />
+                      )}
+                    </g>
+                  )
+                })
+              ) : (
+                <>
+                  <rect x={0} y={boardBottomY} width={width} height={sideRailHeight} fill={railFill} opacity={0.98} />
+                  <line x1={0} y1={boardBottomY} x2={width} y2={boardBottomY} stroke={railStroke} strokeWidth={1} opacity={0.9} />
+                  {/* nut side extension */}
+                  <rect x={0} y={boardBottomY} width={nutWidth} height={sideRailHeight} fill={nutSideFill} opacity={0.98} />
+                  {inlayFrets.map((n) => {
+                    const xL = fretXs[n - 1]
+                    const xR = fretXs[n]
+                    const xMid = (xL + xR) / 2
+                    const yDot = boardBottomY + (sideRailHeight / 2)
+                    const isDouble = n === 12 || (n === 24 && frets >= 24)
+                    const r = 3
+                    return (
+                      <g key={`sidedot-rail-${n}`}>
+                        {isDouble ? (
+                          <>
+                            <circle cx={xMid - 6} cy={yDot} r={r} fill="#dcd7c9" opacity={0.9} />
+                            <circle cx={xMid + 6} cy={yDot} r={r} fill="#dcd7c9" opacity={0.9} />
+                          </>
+                        ) : (
+                          <circle cx={xMid} cy={yDot} r={r} fill="#dcd7c9" opacity={0.9} />
+                        )}
+                      </g>
+                    )
+                  })}
+                </>
+              )}
+            </>
+          )}
 
         {/* strings */}
           {stringYs.map((y, i) => {

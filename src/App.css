@@ -1,0 +1,153 @@
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+.app-root {
+  display: grid;
+  grid-auto-rows: max-content 1fr;
+  gap: 16px;
+  align-items: center;
+  justify-items: center;
+  width: 100%;
+}
+
+
+.controls { display: flex; gap: 12px; align-items: center; }
+
+.control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+}
+.control select {
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.control input[type="checkbox"] {
+  transform: translateY(1px);
+}
+
+.status {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 1rem;
+}
+.target .label { opacity: 0.8; margin-right: 6px; }
+.target .value { font-weight: 700; font-size: 1.2rem; }
+
+.board-label text { paint-order: stroke; stroke: rgba(0,0,0,0.2); stroke-width: 2px; }
+.hover-tip text { paint-order: stroke; stroke: rgba(0,0,0,0.3); stroke-width: 2px; }
+
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.problem-banner {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 80px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+  text-shadow: none;
+  z-index: 30;
+}
+
+.problem-banner.enter { animation: bannerEnter 450ms ease-out; }
+.problem-banner.exit { animation: bannerExit 450ms ease-in forwards; }
+
+@keyframes bannerEnter {
+  0% { opacity: 0; transform: translate(-50%, -24px) rotate(-2deg); }
+  60% { opacity: 1; transform: translate(-50%, 0px) rotate(0deg); }
+  100% { opacity: 1; transform: translate(-50%, 0px) rotate(0deg); }
+}
+
+@keyframes bannerExit {
+  0% { opacity: 1; transform: translate(-50%, 0px) rotate(0deg); }
+  100% { opacity: 0; transform: translate(-50%, 60px) rotate(6deg); }
+}
+
+.floating-controls {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.control.small {
+  padding: 6px 10px;
+}
+
+.fretboard-wrap {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  animation: subtleFloat 6s ease-in-out infinite;
+}
+
+.fretboard {
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* removed target-marker hint animation */
+
+@keyframes subtleFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-0.6px); }
+}
+
+/* Wrong answer feedback */
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+/* removed will-change to avoid creating unexpected containing blocks for fixed elements */
+
+.app-root.damage::after {
+  /* FPS low-health style red vignette */
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255,0,0,0.0) 40%, rgba(255,0,0,0.18) 65%, rgba(255,0,0,0.32) 80%, rgba(255,0,0,0.48) 100%);
+  animation: damagePulse 350ms ease-out forwards;
+}
+
+@keyframes damagePulse {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* apply shake to the main stage on wrong answer */
+.stage.shake { animation: shake 350ms cubic-bezier(.36,.07,.19,.97) both; }
+
+/* Responsive */
+@media (max-width: 1700px) {
+  .fretboard { width: 96vw; height: auto; }
+}

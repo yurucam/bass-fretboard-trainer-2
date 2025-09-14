@@ -1,0 +1,505 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import './App.css'
+
+type StringCount = 4 | 5 | 6
+
+type Target = {
+  stringIndex: number // 0 = bottom (lowest pitch)
+  fret: number // 0..N (0 = open)
+}
+
+type BoardTheme = 'ebony' | 'maple' | 'rosewood' | 'pauferro'
+type InlayStyle = 'dot' | 'block'
+
+// Note: textual tuning kept implicit via OPEN_MIDIS and midiToNameOctave
+
+// MIDI numbers for open strings in standard tuning (bottom=lowest pitch)
+// 4: E1(28), A1(33), D2(38), G2(43)
+// 5: B0(23), E1(28), A1(33), D2(38), G2(43)
+// 6: B0(23), E1(28), A1(33), D2(38), G2(43), C3(48)
+const OPEN_MIDIS: Record<StringCount, number[]> = {
+  4: [28, 33, 38, 43],
+  5: [23, 28, 33, 38, 43],
+  6: [23, 28, 33, 38, 43, 48],
+}
+
+// open string names no longer used for hinting
+
+const NOTE_NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'] as const
+function midiToNameOctave(midi: number): string {
+  const name = NOTE_NAMES_SHARP[midi % 12]
+  const octave = Math.floor(midi / 12) - 1
+  return `${name}${octave}`
+}
+
+function useShake(ms = 350) {
+  const [shaking, setShaking] = useState(false)
+  const timer = useRef<number | null>(null)
+  const trigger = useCallback(() => {
+    if (timer.current) window.clearTimeout(timer.current)
+    setShaking(true)
+    timer.current = window.setTimeout(() => setShaking(false), ms)
+  }, [ms])
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
+  return { shaking, trigger }
+}
+
+function App() {
+  const [stringCount, setStringCount] = useState<StringCount>(4)
+  const [frets, setFrets] = useState<number>(21)
+  const [theme, setTheme] = useState<BoardTheme>('ebony')
+  const [inlay, setInlay] = useState<InlayStyle>('dot')
+
+  // Always running quiz flow
+  const [currentMidi, setCurrentMidi] = useState<number | null>(null)
+  
+  const { shaking, trigger } = useShake()
+  const [showDamage, setShowDamage] = useState(false)
+  const [banner, setBanner] = useState<string | null>(null)
+  const [prevBanner, setPrevBanner] = useState<string | null>(null)
+  const prevLabelRef = useRef<string | null>(null)
+
+  // Unique set of targetable MIDI notes (optionally include open)
+  const possibleMidis = useMemo(() => {
+    const s = new Set<number>()
+    for (let i = 0; i < stringCount; i += 1) {
+      const open = OPEN_MIDIS[stringCount][i]
+      for (let f = 0; f <= frets; f += 1) s.add(open + f)
+    }
+    return Array.from(s)
+  }, [stringCount, frets])
+
+  // Non-repeating deck of targets (across distinct notes)
+  const [, setDeck] = useState<number[]>([])
+  const shuffle = <T,>(arr: T[]): T[] => {
+    const a = arr.slice()
+    for (let i = a.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1))
+      const tmp = a[i]
+      a[i] = a[j]
+      a[j] = tmp
+    }
+    return a
+  }
+
+  useEffect(() => {
+    setDeck(shuffle(possibleMidis))
+    setCurrentMidi(null)
+  }, [possibleMidis])
+
+  const nextTarget = useCallback(() => {
+    setDeck((prev) => {
+      let d = prev
+      if (!d || d.length === 0) d = shuffle(possibleMidis)
+      const [head, ...rest] = d
+      setCurrentMidi(head ?? null)
+      return rest
+    })
+  }, [possibleMidis])
+
+  useEffect(() => {
+    if (currentMidi == null) {
+      nextTarget()
+    }
+  }, [currentMidi, nextTarget])
+
+  // Ensure first target is created immediately on mount
+  useEffect(() => {
+    nextTarget()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // When tuning or fret count changes, request a new target
+  useEffect(() => {
+    setCurrentMidi(null)
+  }, [stringCount, frets])
+
+  // Animate problem banner on change
+  useEffect(() => {
+    if (currentMidi == null) return
+    const label = midiToNameOctave(currentMidi)
+    // move current label to previous for exit animation
+    setPrevBanner(prevLabelRef.current)
+    setBanner(label)
+    prevLabelRef.current = label
+    const t = window.setTimeout(() => setPrevBanner(null), 500)
+    return () => window.clearTimeout(t)
+  }, [currentMidi])
+
+  const onHit = useCallback(
+    (hit: Target) => {
+      if (currentMidi == null) return
+      const midi = OPEN_MIDIS[stringCount][hit.stringIndex] + hit.fret
+      const ok = midi === currentMidi
+      if (ok) {
+        nextTarget()
+      } else {
+        // wrong feedback: shake + red overlay
+        trigger()
+        setShowDamage(true)
+        setTimeout(() => setShowDamage(false), 350)
+      }
+    },
+    [currentMidi, nextTarget, trigger, stringCount],
+  )
+
+
+  return (
+    <div className={`app-root ${showDamage ? 'damage' : ''}`}>
+      <div className={`stage ${shaking ? 'shake' : ''}`}>
+        <Fretboard
+          stringCount={stringCount}
+          frets={frets}
+          theme={theme}
+          inlayStyle={inlay}
+          onHit={onHit}
+        />
+        {/* red overlay handled by .app-root.damage via CSS */}
+      </div>
+      {prevBanner && (
+        <div className="problem-banner exit">{prevBanner}</div>
+      )}
+      {banner && (
+        <div className="problem-banner enter">{banner}</div>
+      )}
+      <div className="floating-controls">
+        <label className="control small">
+          <span>현 수</span>
+          <select
+            value={stringCount}
+            onChange={(e) => setStringCount(Number(e.target.value) as StringCount)}
+          >
+            <option value={4}>4</option>
+            <option value={5}>5</option>
+            <option value={6}>6</option>
+          </select>
+        </label>
+        <label className="control small">
+          <span>프렛</span>
+          <select value={frets} onChange={(e) => setFrets(Number(e.target.value))}>
+            <option value={12}>12</option>
+            <option value={21}>21</option>
+            <option value={22}>22</option>
+            <option value={23}>23</option>
+            <option value={24}>24</option>
+          </select>
+        </label>
+        <label className="control small">
+          <span>지판</span>
+          <select value={theme} onChange={(e) => setTheme(e.target.value as BoardTheme)}>
+            <option value="ebony">에보니</option>
+            <option value="maple">메이플</option>
+            <option value="rosewood">로즈우드</option>
+            <option value="pauferro">포페로</option>
+          </select>
+        </label>
+        <label className="control small">
+          <span>인레이</span>
+          <select value={inlay} onChange={(e) => setInlay(e.target.value as InlayStyle)}>
+            <option value="dot">닷</option>
+            <option value="block">블록</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+export default App
+
+type FretboardProps = {
+  stringCount: StringCount
+  frets: number
+  onHit: (hit: Target) => void
+  theme: BoardTheme
+  inlayStyle: InlayStyle
+}
+
+function Fretboard({ stringCount, frets, onHit, theme, inlayStyle }: FretboardProps) {
+  // SVG geometry
+  const width = 1600
+  const heightPerString = 44
+  const paddingY = 24
+  const nutWidth = 10
+  const boardHeight = stringCount * heightPerString + paddingY * 2
+  const scaleLength = 1000 // px, relative scale for fret spacing
+  const openPad = 14 // extra clickable pad right of nut for open strings
+  const FRET_WIDTH = 5
+
+  // Fret positions from nut (x)
+  const fretXs = useMemo(() => {
+    const xs: number[] = [0]
+    for (let n = 1; n <= frets; n += 1) {
+      const d = scaleLength - scaleLength / Math.pow(2, n / 12)
+      xs.push(d)
+    }
+    // Normalize to fit width minus margin on right
+    const full = xs[xs.length - 1]
+    const marginRight = 30
+    const scale = (width - marginRight - nutWidth) / full
+    return xs.map((x) => nutWidth + x * scale)
+  }, [frets])
+
+  // String centers (bottom = lowest pitch)
+  const stringYs = useMemo(() => {
+    const ys: number[] = []
+    const usable = boardHeight - paddingY * 2
+    for (let i = 0; i < stringCount; i += 1) {
+      // index 0 -> bottom line, index last -> top line
+      const y = paddingY + (usable * (stringCount - 1 - i)) / (stringCount - 1 || 1)
+      ys.push(y)
+    }
+    return ys
+  }, [boardHeight, paddingY, stringCount])
+
+  // Inlay positions up to current fret count
+  const inlayFrets = useMemo(() => {
+    const base = [3, 5, 7, 9, 12, 15, 17, 19]
+    if (frets >= 21) base.push(21)
+    if (frets >= 24) base.push(24)
+    return base.filter((n) => n <= frets)
+  }, [frets])
+
+  // Hit test utility: from pointer to stringIndex/fret
+  const pickHit = (sp: DOMPoint) => {
+    // nearest string
+    let stringIndex = 0
+    let minDy = Infinity
+    stringYs.forEach((y, i) => {
+      const dy = Math.abs(sp.y - y)
+      if (dy < minDy) { minDy = dy; stringIndex = i }
+    })
+    // open string zone
+    if (sp.x <= nutWidth + openPad) {
+      return { stringIndex, fret: 0 }
+    }
+    // fret region n between x_{n-1} and x_n
+    let fret = -1
+    const pad = Math.max(3, Math.ceil(FRET_WIDTH / 2) + 1)
+    for (let n = 1; n <= frets; n += 1) {
+      let x0 = fretXs[n - 1]
+      let x1 = fretXs[n]
+      if (x1 - x0 > pad * 2) { x0 += pad; x1 -= pad }
+      if (sp.x >= x0 && sp.x < x1) { fret = n; break }
+    }
+    if (fret === -1) return null
+    return { stringIndex, fret }
+  }
+
+  // Hover position highlight (follows mouse, shows where click will register)
+  const [hover, setHover] = useState<Target | null>(null)
+
+  // Click handling uses hit test
+  const handleClick = (evt: React.MouseEvent<SVGSVGElement>) => {
+    const svg = evt.currentTarget
+    const pt = svg.createSVGPoint()
+    pt.x = evt.clientX
+    pt.y = evt.clientY
+    const sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    const hit = pickHit(sp)
+    if (!hit) return
+    onHit(hit)
+  }
+
+  const handleMove = (evt: React.MouseEvent<SVGSVGElement>) => {
+    const svg = evt.currentTarget
+    const pt = svg.createSVGPoint()
+    pt.x = evt.clientX
+    pt.y = evt.clientY
+    const sp = pt.matrixTransform(svg.getScreenCTM()?.inverse())
+    const hit = pickHit(sp)
+    setHover(hit)
+  }
+
+  const handleLeave = () => setHover(null)
+
+  // removed highlight position (no hint rendering)
+
+  return (
+    <div className="fretboard-wrap">
+      <svg
+        className="fretboard"
+        width={width}
+        height={boardHeight}
+        viewBox={`0 0 ${width} ${boardHeight}`}
+        onClick={handleClick}
+        onMouseMove={handleMove}
+        onMouseLeave={handleLeave}
+        role="img"
+        aria-label="베이스 지판"
+      >
+        {/* wood background */}
+        <defs>
+          {/* dynamic wood palette by theme */}
+          <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+            {theme === 'ebony' && (
+              <>
+                <stop offset="0%" stopColor="#1f1b18" />
+                <stop offset="50%" stopColor="#2a2521" />
+                <stop offset="100%" stopColor="#151210" />
+              </>
+            )}
+            {theme === 'maple' && (
+              <>
+                <stop offset="0%" stopColor="#e5b369" />
+                <stop offset="50%" stopColor="#d19046" />
+                <stop offset="100%" stopColor="#bf7a2f" />
+              </>
+            )}
+            {theme === 'rosewood' && (
+              <>
+                <stop offset="0%" stopColor="#5a3a2e" />
+                <stop offset="50%" stopColor="#472a21" />
+                <stop offset="100%" stopColor="#3b221b" />
+              </>
+            )}
+            {theme === 'pauferro' && (
+              <>
+                <stop offset="0%" stopColor="#6a4b2f" />
+                <stop offset="50%" stopColor="#845f3b" />
+                <stop offset="100%" stopColor="#573d27" />
+              </>
+            )}
+          </linearGradient>
+          <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f3f3f3" />
+            <stop offset="50%" stopColor="#cfcfcf" />
+            <stop offset="100%" stopColor="#e9e9e9" />
+          </linearGradient>
+          {/* roundwound string pattern */}
+          <pattern id="rw" patternUnits="userSpaceOnUse" width="8" height="8">
+            <rect x="0" y="0" width="8" height="8" fill="#b7c4cf" />
+            <rect x="0" y="0" width="2" height="8" fill="#93a2ad" opacity="0.5" />
+            <rect x="4" y="0" width="2" height="8" fill="#93a2ad" opacity="0.4" />
+          </pattern>
+          {/* pearloid (mother-of-pearl) gradient for block inlays */}
+          <radialGradient id="pearl" cx="50%" cy="50%" r="75%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="35%" stopColor="#f0f4f7" />
+            <stop offset="65%" stopColor="#e3e7ec" />
+            <stop offset="100%" stopColor="#d6dbe1" />
+          </radialGradient>
+        </defs>
+
+        {/* board */}
+        <rect x={0} y={0} width={width} height={boardHeight} fill="url(#wood)" rx={8} />
+
+        {/* nut */}
+        <rect x={0} y={0} width={nutWidth} height={boardHeight} fill="#e5e2d8" />
+        {/* open helper zone visual (subtle) */}
+        <rect x={nutWidth} y={0} width={openPad} height={boardHeight} fill="#ffffff" opacity={0.04} />
+
+        {/* frets */}
+        {fretXs.slice(1).map((x, i) => (
+          <rect
+            key={`fret-${i + 1}`}
+            x={x - FRET_WIDTH / 2}
+            y={0}
+            width={FRET_WIDTH}
+            height={boardHeight}
+            fill="url(#metal)"
+            stroke="#6a6a6a"
+            strokeWidth={0.6}
+            opacity={0.98}
+          />
+        ))}
+
+        {/* inlays */}
+        {inlayFrets.map((n) => {
+          const xL = fretXs[n - 1]
+          const xR = fretXs[n]
+          const xMid = (xL + xR) / 2
+          const isDouble = n === 12 || (n === 24 && frets >= 24)
+          const bottomY = Math.max(...stringYs)
+          const topY = Math.min(...stringYs)
+          const centerY = (topY + bottomY) / 2
+          const inlayFill = theme === 'maple' ? '#333' : '#dcd7c9'
+          if (inlayStyle === 'dot') {
+            const dotR = 8
+            const edgeMargin = Math.max(dotR + 3, paddingY * 0.6)
+            const yTopEdge = paddingY + edgeMargin
+            const yBottomEdge = boardHeight - paddingY - edgeMargin
+            return (
+              <g key={`inlay-${n}`}>
+                {isDouble ? (
+                  <>
+                    <circle cx={xMid} cy={yTopEdge} r={dotR} fill={inlayFill} opacity={0.95} />
+                    <circle cx={xMid} cy={yBottomEdge} r={dotR} fill={inlayFill} opacity={0.95} />
+                  </>
+                ) : (
+                  <circle cx={xMid} cy={centerY} r={dotR} fill={inlayFill} opacity={0.9} />
+                )}
+              </g>
+            )
+          }
+          // block style: single pearl block, slightly narrower horizontally and taller vertically (12/24 also single)
+          const vSpan = bottomY - topY
+          const vPad = Math.max(4, vSpan * 0.06) // smaller pad => taller block
+          const blockH = Math.max(22, vSpan - vPad * 2)
+          const y = centerY - blockH / 2
+          const hSpan = xR - xL
+          const hPad = Math.max(4, hSpan * 0.16) // slightly larger pad => slightly narrower block
+          const blockW = Math.max(10, hSpan - hPad * 2)
+          const x = xL + hPad
+          const ry = 4
+          return (
+            <g key={`inlay-${n}`}>
+              <rect x={x} y={y} width={blockW} height={blockH} rx={ry} ry={ry} fill="url(#pearl)" opacity={0.95} stroke="rgba(255,255,255,0.35)" strokeWidth={0.6} />
+            </g>
+          )
+        })}
+
+        {/* strings */}
+        {stringYs.map((y, i) => {
+          const gauge = 4 + (stringYs.length - 1 - i) * 1.2 // thicker for lower strings (bottom)
+          const highlight = '#e7f0f6'
+          return (
+            <g key={`string-${i}`}>
+              <rect
+                x={0}
+                y={y - gauge / 2}
+                width={width}
+                height={gauge}
+                fill="url(#rw)"
+                opacity={0.95}
+                style={{ filter: 'drop-shadow(0px 1px 0px rgba(0,0,0,0.35))' }}
+              />
+              <line
+                x1={0}
+                y1={y}
+                x2={width}
+                y2={y}
+                stroke={highlight}
+                strokeWidth={Math.max(1, gauge - 3)}
+                opacity={0.5}
+              />
+            </g>
+          )
+        })}
+
+        {/* hover indicator only; no target hint */}
+
+        {/* hover highlight: full cell area for the hovered string × fret */}
+        {hover && (
+          (() => {
+            const yCenter = stringYs[hover.stringIndex]
+            const h = heightPerString * 0.9
+            const y = yCenter - h / 2
+            if (hover.fret === 0) {
+              // open: entire open click zone
+              const x0 = 0
+              const x1 = nutWidth + openPad
+              const w = x1 - x0
+              return <rect x={x0} y={y} width={w} height={h} rx={6} ry={6} fill="rgba(0,0,0,0.20)" />
+            } else {
+              const x0 = fretXs[hover.fret - 1]
+              const x1 = fretXs[hover.fret]
+              const w = Math.max(2, x1 - x0)
+              return <rect x={x0} y={y} width={w} height={h} rx={6} ry={6} fill="rgba(0,0,0,0.20)" />
+            }
+          })()
+        )}
+      </svg>
+    </div>
+  )
+}

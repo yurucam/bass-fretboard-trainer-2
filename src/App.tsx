@@ -480,8 +480,8 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
         </defs>
 
         <g transform={flipBoth ? `translate(${width},${boardHeight}) scale(-1,-1)` : undefined}>
-          {/* board */}
-          <rect x={0} y={0} width={width} height={boardHeight} fill="url(#wood)" rx={8} />
+        {/* board (no rounding) */}
+        <rect x={0} y={0} width={width} height={boardHeight} fill="url(#wood)" />
 
           {/* nut */}
           <rect x={0} y={0} width={nutWidth} height={boardHeight} fill="#e5e2d8" />
@@ -593,8 +593,18 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
               const w = x1 - x0
               return <rect x={x0} y={y} width={w} height={h} rx={6} ry={6} fill="rgba(0,0,0,0.20)" />
             } else {
-            const x0 = fretXs[hover.fret - 1]
-              const x1 = fretXs[hover.fret]
+              let x0 = fretXs[hover.fret - 1]
+              let x1 = fretXs[hover.fret]
+              // mirror hit-test padding to avoid overlapping metal frets
+              const pad = Math.max(3, Math.ceil(FRET_WIDTH / 2) + 1)
+              if (x1 - x0 > pad * 2) { x0 += pad; x1 -= pad }
+              // avoid overlap with expanded open region on 1st fret
+              if (hover.fret === 1) {
+                const firstFretX = fretXs[1] ?? (nutWidth + 60)
+                const openGrace = Math.min(24, (firstFretX - nutWidth) * 0.25)
+                const openRight = nutWidth + openPad + openGrace
+                if (openRight > x0) x0 = Math.min(x1 - 2, openRight)
+              }
               const w = Math.max(2, x1 - x0)
               return <rect x={x0} y={y} width={w} height={h} rx={6} ry={6} fill="rgba(0,0,0,0.20)" />
             }

@@ -261,7 +261,7 @@
     overflow: hidden;
   }
   .viewport .problem-banner { font-size: clamp(28px, 12vmin, 96px); }
-  .viewport .fretboard-wrap { width: 100%; height: auto; display: flex; justify-content: center; align-items: center; margin: 6vmin 0; border-radius: 16px; }
+  .viewport .fretboard-wrap { width: 100%; height: auto; display: flex; justify-content: center; align-items: center; margin: 6vmin 0; }
   .viewport .fretboard { width: min(100vh - 10vmin, 100%); max-height: calc(100vw - 12vmin); height: auto; max-width: 100%; }
   .viewport .problem-banner { position: absolute; top: 2vmin; left: 50%; transform: translateX(-50%); pointer-events: none; }
   .viewport .floating-controls { position: absolute; right: 12px; bottom: 12px; }

@@ -3,6 +3,7 @@ import './App.css'
 import { audio } from './audio'
 import { FiSettings } from 'react-icons/fi'
 import { IoClose } from 'react-icons/io5'
+import { Renderer, Stave, StaveNote, Accidental, Formatter, Voice } from 'vexflow'
 
 type StringCount = 4 | 5 | 6
 
@@ -13,6 +14,7 @@ type Target = {
 
 type BoardTheme = 'ebony' | 'maple' | 'rosewood' | 'pauferro'
 type InlayStyle = 'dot' | 'block'
+type ProblemView = 'text' | 'staff'
 
 // Note: textual tuning kept implicit via OPEN_MIDIS and midiToNameOctave
 
@@ -72,6 +74,7 @@ function App() {
   const [inlay, setInlay] = usePersistedState<InlayStyle>('bf:inlay', 'dot')
   const [flipBoth, setFlipBoth] = usePersistedState<boolean>('bf:flipBoth', false)
   const [soundOn, setSoundOn] = usePersistedState<boolean>('bf:soundOn', true)
+  const [problemView, setProblemView] = usePersistedState<ProblemView>('bf:problemView', 'text')
 
   // Always running quiz flow
   const [currentMidi, setCurrentMidi] = useState<number | null>(null)
@@ -209,10 +212,10 @@ function App() {
           {/* red overlay handled by .app-root.damage via CSS */}
         </div>
         {prevBanner && (
-          <div className="problem-banner exit">{prevBanner}</div>
+          <div className="problem-banner exit">{problemView === 'staff' ? <StaffNote midi={currentMidi!} /> : prevBanner}</div>
         )}
         {banner && (
-          <div className="problem-banner enter">{banner}</div>
+          <div className="problem-banner enter">{problemView === 'staff' ? <StaffNote midi={currentMidi!} /> : banner}</div>
         )}
         <div className={`floating-controls ${controlsOpen ? 'open' : ''}`}>
           <button
@@ -268,6 +271,16 @@ function App() {
               checked={soundOn}
               onChange={(e) => setSoundOn(e.target.checked)}
             />
+          </label>
+          <label className="control small">
+            <span>문제 표시</span>
+            <select
+              value={problemView}
+              onChange={(e) => setProblemView(e.target.value as ProblemView)}
+            >
+              <option value="text">텍스트</option>
+              <option value="staff">악보</option>
+            </select>
           </label>
           <label className="control small">
             <span>상하좌우 반전</span>
@@ -613,4 +626,76 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, flipBoth }: F
         </g>
     </svg>
   )
+}
+
+function StaffNote({ midi }: { midi: number }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!ref.current) return
+    ref.current.innerHTML = ''
+    const width = 240
+    const height = 280
+    const renderer = new Renderer(ref.current, Renderer.Backends.SVG)
+    renderer.resize(width, height)
+    const context = renderer.getContext()
+    // draw staff and notes in white on dark background
+    // (VexFlow uses current context stroke/fill styles)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(context as any).setFillStyle?.('#ffffff')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(context as any).setStrokeStyle?.('#ffffff')
+    // Always-rendered vertical position (fixed), keep consistent across problems
+    const writtenMidi = midi + 12 // 8vb notation (bass clef standard)
+    const { key, acc, oct } = midiToVexKey(writtenMidi)
+    const staveY = 50
+    const stave = new Stave(16, staveY, width - 32)
+    stave.addClef('bass')
+    stave.setContext(context).draw()
+    // Stem direction rule: from E3 (written) and above, force stems downward
+    // writtenMidi already includes +12 (8vb); E3 (written) MIDI = 52
+    const stemDir = (writtenMidi >= 52) ? -1 : 1
+    const note = new StaveNote({ clef: 'bass', keys: [`${key}/${oct}`], duration: 'q' } as any)
+    // apply stem direction across VexFlow versions
+    ;(note as any).setStemDirection?.(stemDir)
+    if (!(note as any).setStemDirection) { (note as any).stem_direction = stemDir }
+    if (acc) note.addModifier(new Accidental(acc), 0)
+    const voice = new Voice({ numBeats: 1, beatValue: 4 })
+    voice.addTickables([note])
+    new Formatter().joinVoices([voice]).format([voice], Math.max(120, width - 80))
+    voice.draw(context, stave)
+
+    // Allow CSS to control final rendered size: remove fixed w/h attributes
+    const svgEl = ref.current.querySelector('svg') as SVGSVGElement | null
+    if (svgEl) {
+      svgEl.setAttribute('viewBox', `0 0 ${width} ${height}`)
+      svgEl.removeAttribute('width')
+      svgEl.removeAttribute('height')
+      svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+      svgEl.style.width = 'auto'
+      svgEl.style.height = 'auto'
+    }
+  }, [midi])
+  return <div className="staff-problem" ref={ref} aria-label={`midi-${midi}`} />
+}
+
+function midiToVexKey(midi: number): { key: string; oct: number; acc: '' | '#' | 'b' } {
+  const pc = midi % 12
+  const octave = Math.floor(midi / 12) - 1
+  // sharps mapping by default
+  const map: Record<number, { key: string; acc: '' | '#' | 'b' }> = {
+    0: { key: 'c', acc: '' },
+    1: { key: 'c', acc: '#' },
+    2: { key: 'd', acc: '' },
+    3: { key: 'd', acc: '#' },
+    4: { key: 'e', acc: '' },
+    5: { key: 'f', acc: '' },
+    6: { key: 'f', acc: '#' },
+    7: { key: 'g', acc: '' },
+    8: { key: 'g', acc: '#' },
+    9: { key: 'a', acc: '' },
+    10: { key: 'a', acc: '#' },
+    11: { key: 'b', acc: '' },
+  }
+  const { key, acc } = map[pc]
+  return { key, acc, oct: octave }
 }

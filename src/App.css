@@ -47,7 +47,7 @@
 
 .problem-banner {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 28px);
+  top: calc(env(safe-area-inset-top, 0px) + 80px);
   left: 50%;
   transform: translateX(-50%);
   padding: 0;
@@ -60,6 +60,24 @@
   color: #ffffff;
   text-shadow: none;
   z-index: 30;
+  pointer-events: none; /* never block interactions with the board */
+}
+.staff-problem { background: transparent; display: inline-block; padding: 0; }
+.staff-problem svg { height: clamp(200px, 36vmin, 380px) !important; width: auto !important; display: block; }
+
+/* Keep text banner baseline normal, but remove extra line box for staff only */
+.problem-banner .staff-problem { line-height: 0; display: inline-block; }
+/* Force VexFlow staff/notes to render in white on dark UI */
+.staff-problem svg line,
+.staff-problem svg path,
+.staff-problem svg rect {
+  stroke: #ffffff !important;
+}
+.staff-problem svg text,
+.staff-problem svg ellipse,
+.staff-problem svg circle,
+.staff-problem svg path {
+  fill: #ffffff !important;
 }
 
 .problem-banner.enter { animation: bannerEnter 450ms ease-out; }
@@ -263,7 +281,7 @@
   .viewport .problem-banner { font-size: clamp(28px, 12vmin, 96px); }
   .viewport .fretboard-wrap { width: 100%; height: auto; display: flex; justify-content: center; align-items: center; margin: 6vmin 0; }
   .viewport .fretboard { width: min(100vh - 10vmin, 100%); max-height: calc(100vw - 12vmin); height: auto; max-width: 100%; }
-  .viewport .problem-banner { position: absolute; top: 2vmin; left: 50%; transform: translateX(-50%); pointer-events: none; }
+  .viewport .problem-banner { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 24px); left: 50%; transform: translateX(-50%); pointer-events: none; }
   .viewport .floating-controls { position: absolute; right: 12px; bottom: 12px; }
 }
 

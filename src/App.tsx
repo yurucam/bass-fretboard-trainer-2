@@ -79,6 +79,9 @@ function App() {
   const [banner, setBanner] = useState<string | null>(null)
   const [prevBanner, setPrevBanner] = useState<string | null>(null)
   const prevLabelRef = useRef<string | null>(null)
+  // guard against rapid multi-taps causing double-advance
+  const lastHitTsRef = useRef<number>(0)
+  const pendingNextRef = useRef<boolean>(false)
 
   // Unique set of targetable MIDI notes (optionally include open)
   const possibleMidis = useMemo(() => {
@@ -149,6 +152,9 @@ function App() {
 
   const onHit = useCallback(
     (hit: Target) => {
+      const nowTs = performance.now()
+      if (nowTs - lastHitTsRef.current < 60) return
+      lastHitTsRef.current = nowTs
       if (currentMidi == null) return
       const midi = OPEN_MIDIS[stringCount][hit.stringIndex] + hit.fret
       // Play the pressed note (stop previous first) if enabled
@@ -160,7 +166,13 @@ function App() {
       }
       const ok = midi === currentMidi
       if (ok) {
-        nextTarget()
+        if (!pendingNextRef.current) {
+          pendingNextRef.current = true
+          requestAnimationFrame(() => {
+            nextTarget()
+            pendingNextRef.current = false
+          })
+        }
       } else {
         // wrong feedback: shake + red overlay
         trigger()
@@ -212,14 +224,6 @@ function App() {
             </select>
           </label>
           <label className="control small">
-            <span>음 재생</span>
-            <input
-              type="checkbox"
-              checked={soundOn}
-              onChange={(e) => setSoundOn(e.target.checked)}
-            />
-          </label>
-          <label className="control small">
             <span>프렛</span>
             <select value={frets} onChange={(e) => setFrets(Number(e.target.value))}>
               <option value={12}>12</option>
@@ -244,6 +248,14 @@ function App() {
               <option value="dot">닷</option>
               <option value="block">블록</option>
             </select>
+          </label>
+          <label className="control small">
+            <span>소리 재생</span>
+            <input
+              type="checkbox"
+              checked={soundOn}
+              onChange={(e) => setSoundOn(e.target.checked)}
+            />
           </label>
           <label className="control small">
             <span>상하좌우 반전</span>

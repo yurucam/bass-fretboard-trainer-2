@@ -455,9 +455,9 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, sideDots, bin
       const u = (evt.clientX - rect.left) / rect.width
       const v = (evt.clientY - rect.top) / rect.height
       // viewport is rotated +90deg; invert rotation: x = v, y = 1 - u
-      sp = new DOMPoint(width * v, boardHeight * (1 - u))
+      sp = new DOMPoint(width * v, totalHeight * (1 - u))
     }
-    if (flipBoth) sp = new DOMPoint(width - sp.x, boardHeight - sp.y)
+    if (flipBoth) sp = new DOMPoint(width - sp.x, totalHeight - sp.y)
     const hit = pickHit(sp)
     if (!hit) return
     setHover(hit)
@@ -474,9 +474,9 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, sideDots, bin
       const rect = svg.getBoundingClientRect()
       const u = (evt.clientX - rect.left) / rect.width
       const v = (evt.clientY - rect.top) / rect.height
-      sp = new DOMPoint(width * v, boardHeight * (1 - u))
+      sp = new DOMPoint(width * v, totalHeight * (1 - u))
     }
-    if (flipBoth) sp = new DOMPoint(width - sp.x, boardHeight - sp.y)
+    if (flipBoth) sp = new DOMPoint(width - sp.x, totalHeight - sp.y)
     const hit = pickHit(sp)
     setHover(hit)
   }
@@ -550,7 +550,7 @@ function Fretboard({ stringCount, frets, onHit, theme, inlayStyle, sideDots, bin
           </radialGradient>
         </defs>
 
-        <g transform={flipBoth ? `translate(${width},${boardHeight}) scale(-1,-1)` : undefined}>
+        <g transform={flipBoth ? `translate(${width},${totalHeight}) scale(-1,-1)` : undefined}>
           {/* board (no rounding) */}
         <rect x={0} y={boardTopY} width={width} height={boardHeight} fill="url(#wood)" />
         {binding && (
